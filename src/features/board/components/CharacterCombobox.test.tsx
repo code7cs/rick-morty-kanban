@@ -66,4 +66,23 @@ describe('CharacterCombobox', () => {
 
     expect(onChange).toHaveBeenCalledWith('2');
   });
+
+  it('keeps the active keyboard option in view', async () => {
+    const user = userEvent.setup();
+    renderCombobox();
+    const trigger = screen.getByRole('combobox', { name: 'Character' });
+
+    await user.click(trigger);
+
+    const nextOption = screen.getByRole('option', { name: 'Morty Smith' });
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(nextOption, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    await user.keyboard('{ArrowDown}');
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+  });
 });

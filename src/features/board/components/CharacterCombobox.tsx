@@ -5,8 +5,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { CharacterSummary } from '../characters/characters.types';
-import styles from './board.module.css';
+import type { CharacterSummary } from '../../characters/characters.types';
+import styles from '../board.module.css';
 import { LazyAvatar } from './LazyAvatar';
 
 type Props = {
@@ -34,6 +34,7 @@ export function CharacterCombobox({
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLDivElement | null>>([]);
   const listboxId = useId();
 
   const selectedCharacter = characters.find(
@@ -61,6 +62,16 @@ export function CharacterCombobox({
     return () =>
       document.removeEventListener('pointerdown', handleOutsidePointerDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || safeActiveIndex < 0) {
+      return;
+    }
+
+    optionRefs.current[safeActiveIndex]?.scrollIntoView?.({
+      block: 'nearest',
+    });
+  }, [isOpen, safeActiveIndex]);
 
   function open() {
     if (disabled || characters.length === 0) {
@@ -193,6 +204,9 @@ export function CharacterCombobox({
         >
           {characters.map((character, index) => (
             <div
+              ref={(element) => {
+                optionRefs.current[index] = element;
+              }}
               key={character.id}
               id={listboxId + '-option-' + index}
               className={
