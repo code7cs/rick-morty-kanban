@@ -20,6 +20,7 @@ The project is intentionally frontend-only: board state is stored in the browser
 - Show an insertion preview while dragging without shifting the page layout.
 - Strike through completed task titles and celebrate completed work with colorful confetti.
 - Delete individual tasks or reset the entire board.
+- Undo the most recent board changes with a bounded in-memory history.
 - Persist the board in versioned `localStorage`.
 - Provide a responsive layout with horizontally scrollable Kanban columns on small screens.
 
@@ -68,7 +69,7 @@ src/
 - `src/features/board/components` contains focused presentational components.
 - `src/features/board/state` contains the pure board reducer, domain types, and local persistence adapter.
 - `KanbanBoard` coordinates board state, drag lifecycle events, and completion celebration.
-- Dragging is controlled through React state: `onDragStart` snapshots the board, `onDragOver` applies movement, and `onDragEnd` finalizes or safely falls back. This keeps React as the source of truth and avoids DOM ownership conflicts.
+- Dragging is controlled through React state: `onDragStart` records the origin, `onDragOver` applies a transient preview, and `onDragEnd` commits one move or safely discards the preview. Committed board history uses bounded immutable snapshots, while persistence ignores transient previews.
 - CSS Modules keep feature styles local; global CSS contains only shared tokens and primitives.
 
 ## Verification

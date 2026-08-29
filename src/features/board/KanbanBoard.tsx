@@ -12,6 +12,11 @@ import type {
   CharactersStatus,
   CharacterSummary,
 } from '../characters/characters.types';
+import {
+  boardHistoryReducer,
+  createBoardHistory,
+  type BoardHistoryAction,
+} from './state/board.history';
 import { boardReducer } from './state/board.reducer';
 import {
   clearBoardState,
@@ -21,6 +26,7 @@ import {
 import {
   createDragMove,
   findItemLocation,
+  resolveDropPosition,
   type DragMove,
 } from './dnd/board.drag';
 import type {
@@ -46,8 +52,10 @@ const COLUMNS: Array<{ id: ColumnId; title: string }> = [
 
 type DragSession = {
   itemId: string;
-  snapshot: BoardState;
-  hasMoved: boolean;
+  origin: {
+    columnId: ColumnId;
+    index: number;
+  };
   lastTargetId: string | null;
 };
 
@@ -58,9 +66,19 @@ type Props = {
   onRetryCharacters: () => void;
 };
 
+function dragMoveAction(move: DragMove): BoardAction {
+  return {
+    type: 'itemMoved',
+    itemId: move.itemId,
+    from: move.from,
+    to: move.to,
+    targetIndex: move.targetIndex,
+  };
+}
+
 function applyDragMove(
   board: BoardState,
-  dispatch: Dispatch<BoardAction>,
+  dispatch: Dispatch<BoardHistoryAction>,
   session: DragSession,
   target: unknown,
 ): DragMove | null {
@@ -71,27 +89,22 @@ function applyDragMove(
   }
 
   dispatch({
-    type: 'itemMoved',
-    itemId: move.itemId,
-    from: move.from,
-    to: move.to,
-    targetIndex: move.targetIndex,
+    type: 'boardActionPreviewed',
+    action: dragMoveAction(move),
   });
 
-  session.hasMoved = true;
   session.lastTargetId = move.targetId;
   return move;
 }
 
 function movedIntoDone(
-  snapshot: BoardState,
+  origin: DragSession['origin'],
   board: BoardState,
   itemId: string,
 ) {
-  const before = findItemLocation(snapshot, itemId);
   const after = findItemLocation(board, itemId);
 
-  return before?.columnId !== 'done' && after?.columnId === 'done';
+  return origin.columnId !== 'done' && after?.columnId === 'done';
 }
 
 function findBoardItem(
@@ -109,16 +122,17 @@ export function KanbanBoard({
   characterError,
   onRetryCharacters,
 }: Props) {
-  const [board, dispatch] = useReducer(
-    boardReducer,
+  const [history, dispatch] = useReducer(
+    boardHistoryReducer,
     undefined,
-    loadBoardState,
+    () => createBoardHistory(loadBoardState()),
   );
+  const board = history.preview ?? history.committed;
   const dragSessionRef = useRef<DragSession | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   useEffect(() => {
-    saveBoardState(board);
-  }, [board]);
+    saveBoardState(history.committed);
+  }, [history.committed]);
 
   const activeItem = activeItemId
     ? findBoardItem(board, activeItemId)
@@ -131,29 +145,50 @@ export function KanbanBoard({
   }, []);
 
   function handleCreate(input: CreateItemInput) {
+    if (activeItemId !== null) {
+      return;
+    }
+
     dispatch({
-      type: 'itemCreated',
-      item: {
-        id: crypto.randomUUID(),
-        ...input,
+      type: 'boardActionCommitted',
+      action: {
+        type: 'itemCreated',
+        item: {
+          id: crypto.randomUUID(),
+          ...input,
+        },
       },
     });
   }
 
   function handleDelete(itemId: string) {
+    if (activeItemId !== null) {
+      return;
+    }
+
     dispatch({
-      type: 'itemDeleted',
-      itemId,
+      type: 'boardActionCommitted',
+      action: {
+        type: 'itemDeleted',
+        itemId,
+      },
     });
   }
 
   function handleReset() {
+    if (activeItemId !== null) {
+      return;
+    }
+
     if (!window.confirm('Reset the board and remove all tasks?')) {
       return;
     }
 
     clearBoardState();
-    dispatch({ type: 'boardReset' });
+    dispatch({
+      type: 'boardActionCommitted',
+      action: { type: 'boardReset' },
+    });
   }
 
   return (
@@ -171,6 +206,8 @@ export function KanbanBoard({
         characterError={characterError}
         onRetryCharacters={onRetryCharacters}
         onCreate={handleCreate}
+        canUndo={history.past.length > 0 && activeItemId === null}
+        onUndo={() => dispatch({ type: 'historyUndone' })}
         canReset={hasTasks}
         onReset={handleReset}
       />
@@ -186,10 +223,17 @@ export function KanbanBoard({
           }
 
           const itemId = String(source.id);
+          const origin = findItemLocation(history.committed, itemId);
+
+          if (!origin) {
+            dragSessionRef.current = null;
+            setActiveItemId(null);
+            return;
+          }
+
           dragSessionRef.current = {
             itemId,
-            snapshot: board,
-            hasMoved: false,
+            origin,
             lastTargetId: null,
           };
           setActiveItemId(itemId);
@@ -212,12 +256,7 @@ export function KanbanBoard({
           const session = dragSessionRef.current;
 
           if (event.canceled) {
-            if (session) {
-              dispatch({
-                type: 'boardRestored',
-                board: session.snapshot,
-              });
-            }
+            dispatch({ type: 'boardPreviewDiscarded' });
 
             dragSessionRef.current = null;
             setActiveItemId(null);
@@ -227,6 +266,7 @@ export function KanbanBoard({
           const { source, target } = event.operation;
 
           if (!isSortable(source)) {
+            dispatch({ type: 'boardPreviewDiscarded' });
             dragSessionRef.current = null;
             setActiveItemId(null);
             return;
@@ -236,31 +276,65 @@ export function KanbanBoard({
           const activeSession =
             session && session.itemId === itemId
               ? session
-              : {
-                  itemId,
-                  snapshot: board,
-                  hasMoved: false,
-                  lastTargetId: null,
-                };
-          const hadMoved = activeSession.hasMoved;
+              : (() => {
+                  const origin = findItemLocation(
+                    history.committed,
+                    itemId,
+                  );
+
+                  return origin
+                    ? { itemId, origin, lastTargetId: null }
+                    : null;
+                })();
+
+          if (!activeSession) {
+            dispatch({ type: 'boardPreviewDiscarded' });
+            dragSessionRef.current = null;
+            setActiveItemId(null);
+            return;
+          }
+
+          const finalPosition = resolveDropPosition(target, board);
+
+          if (!finalPosition) {
+            dispatch({ type: 'boardPreviewDiscarded' });
+            dragSessionRef.current = null;
+            setActiveItemId(null);
+            return;
+          }
+
           const move = applyDragMove(
             board,
             dispatch,
             activeSession,
             target,
           );
+          const finalBoard = move
+            ? boardReducer(board, dragMoveAction(move))
+            : board;
+          const after = findItemLocation(finalBoard, itemId);
 
           if (
-            move &&
-            move.from !== 'done' &&
-            move.to === 'done'
+            after &&
+            (activeSession.origin.columnId !== after.columnId ||
+              activeSession.origin.index !== after.index)
           ) {
-            setCelebrationId(itemId + ':' + Date.now());
-          } else if (
-            hadMoved &&
-            movedIntoDone(activeSession.snapshot, board, itemId)
-          ) {
-            setCelebrationId(itemId + ':' + Date.now());
+            dispatch({
+              type: 'boardActionCommitted',
+              action: {
+                type: 'itemMoved',
+                itemId,
+                from: activeSession.origin.columnId,
+                to: after.columnId,
+                targetIndex: after.index,
+              },
+            });
+
+            if (movedIntoDone(activeSession.origin, finalBoard, itemId)) {
+              setCelebrationId(itemId + ':' + Date.now());
+            }
+          } else {
+            dispatch({ type: 'boardPreviewDiscarded' });
           }
 
           dragSessionRef.current = null;

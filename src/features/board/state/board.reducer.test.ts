@@ -71,6 +71,20 @@ describe('boardReducer', () => {
     expect(next.todo.map(({ id }) => id)).toEqual(['c', 'a', 'b']);
   });
 
+  it('returns the original state when an item stays at the same index', () => {
+    const state = board({ todo: [item('a'), item('b')] });
+
+    const next = boardReducer(state, {
+      type: 'itemMoved',
+      itemId: 'b',
+      from: 'todo',
+      to: 'todo',
+      targetIndex: 1,
+    });
+
+    expect(next).toBe(state);
+  });
+
   it('moves an item into the middle of another column', () => {
     const state = board({
       todo: [item('a')],
@@ -163,5 +177,11 @@ describe('boardReducer', () => {
     expect(
       boardReducer(state, { type: 'itemDeleted', itemId: 'missing' }),
     ).toBe(state);
+  });
+
+  it('returns the original state when resetting an empty board', () => {
+    const state = createEmptyBoard();
+
+    expect(boardReducer(state, { type: 'boardReset' })).toBe(state);
   });
 });

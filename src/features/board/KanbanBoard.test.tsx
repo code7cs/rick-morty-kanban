@@ -33,6 +33,26 @@ function renderBoard() {
   );
 }
 describe('KanbanBoard', () => {
+  it('undoes committed board actions newest first', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    expect(undo).toBeDisabled();
+
+    await addTask(user, 'Task one');
+    await addTask(user, 'Task two');
+    expect(undo).toBeEnabled();
+
+    await user.click(undo);
+    expect(screen.getByText('Task one')).toBeInTheDocument();
+    expect(screen.queryByText('Task two')).not.toBeInTheDocument();
+
+    await user.click(undo);
+    expect(screen.queryByText('Task one')).not.toBeInTheDocument();
+    expect(undo).toBeDisabled();
+  });
+
   it('creates assigned tasks in To Do', async () => {
     const user = userEvent.setup();
 
@@ -64,6 +84,9 @@ describe('KanbanBoard', () => {
     );
 
     expect(screen.queryByText('Remove this task')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByText('Remove this task')).toBeInTheDocument();
   });
 
   it('resets the board after confirmation and clears the cache', async () => {
@@ -79,6 +102,10 @@ describe('KanbanBoard', () => {
     expect(screen.queryByText('Reset this task')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reset board' })).toBeDisabled();
     expect(window.localStorage.length).toBe(0);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByText('Reset this task')).toBeInTheDocument();
+    expect(window.localStorage.length).toBeGreaterThan(0);
     confirmSpy.mockRestore();
   });
 });

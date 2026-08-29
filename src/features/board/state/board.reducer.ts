@@ -39,6 +39,11 @@ function moveItem(
 
   if (from === to) {
     const insertionIndex = clampIndex(targetIndex, sourceItems.length);
+
+    if (insertionIndex === sourceIndex) {
+      return state;
+    }
+
     sourceItems.splice(insertionIndex, 0, movedItem);
 
     return {
@@ -88,7 +93,11 @@ export function boardReducer(
     case 'boardRestored':
       return action.board;
     case 'boardReset':
-      return createEmptyBoard();
+      return state.todo.length === 0 &&
+        state.doing.length === 0 &&
+        state.done.length === 0
+        ? state
+        : createEmptyBoard();
     case 'itemCreated':
       return createItem(state, action.item);
     case 'itemDeleted':

@@ -17,6 +17,8 @@ type Props = {
   characterError: string | null;
   onRetryCharacters: () => void;
   onCreate: (input: CreateItemInput) => void;
+  canUndo: boolean;
+  onUndo: () => void;
   canReset: boolean;
   onReset: () => void;
 };
@@ -32,6 +34,8 @@ export function CreateTaskForm({
   characterError,
   onRetryCharacters,
   onCreate,
+  canUndo,
+  onUndo,
   canReset,
   onReset,
 }: Props) {
@@ -143,6 +147,14 @@ export function CreateTaskForm({
             }
           >
             Add task
+          </button>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+          >
+            Undo
           </button>
           <button
             className={styles.secondaryButton}

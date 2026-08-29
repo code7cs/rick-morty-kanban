@@ -258,6 +258,7 @@
 
 .formActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.65rem;
   margin-top: 1.55rem;

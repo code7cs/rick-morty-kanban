@@ -86,6 +86,7 @@ vi.mock('@dnd-kit/react/sortable', () => ({
 }));
 
 import { KanbanBoard } from './KanbanBoard';
+import { BOARD_STORAGE_KEY } from './state/board.storage';
 
 const characters = [
   {
@@ -309,6 +310,126 @@ describe('KanbanBoard drag and drop', () => {
 
     expect(columnItems('To Do')).toEqual([]);
     expect(columnItems('Doing')).toEqual(['Task one']);
+  });
+
+  it('records a completed drag as one undoable action', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+
+    const source = sortableSource('task-1', 'todo', 0);
+    const event = {
+      operation: { source, target: columnTarget('doing') },
+    };
+    startDrag(event);
+    overDrag(event);
+    endDrag(event);
+
+    expect(columnItems('Doing')).toEqual(['Task one']);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(columnItems('To Do')).toEqual(['Task one']);
+    expect(columnItems('Doing')).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByText('Task one')).not.toBeInTheDocument();
+  });
+
+  it('discards a preview when the drag ends without a valid target', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+
+    const source = sortableSource('task-1', 'todo', 0);
+    startDrag({ operation: { source } });
+    overDrag({ operation: { source, target: columnTarget('doing') } });
+    endDrag({ operation: { source } });
+
+    expect(columnItems('To Do')).toEqual(['Task one']);
+    expect(columnItems('Doing')).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByText('Task one')).not.toBeInTheDocument();
+  });
+
+  it('does not persist a drag preview before the drag is committed', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+
+    const source = sortableSource('task-1', 'todo', 0);
+    startDrag({ operation: { source } });
+    overDrag({ operation: { source, target: columnTarget('doing') } });
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(BOARD_STORAGE_KEY) ?? '{}',
+    ) as { board?: { todo?: unknown[]; doing?: unknown[] } };
+
+    expect(stored.board?.todo).toHaveLength(1);
+    expect(stored.board?.doing).toHaveLength(0);
+
+    endDrag({ canceled: true, operation: { source } });
+  });
+
+  it('disables Undo while a drag is active', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+
+    const source = sortableSource('task-1', 'todo', 0);
+    startDrag({ operation: { source } });
+
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+
+    endDrag({ canceled: true, operation: { source } });
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  });
+
+  it('does not add history when a drag returns to its original position', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+
+    const source = sortableSource('task-1', 'todo', 0);
+    startDrag({ operation: { source } });
+    overDrag({ operation: { source, target: columnTarget('doing') } });
+    overDrag({ operation: { source, target: columnTarget('todo') } });
+    endDrag({
+      operation: { source, target: columnTarget('todo') },
+    });
+
+    expect(columnItems('To Do')).toEqual(['Task one']);
+    expect(columnItems('Doing')).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByText('Task one')).not.toBeInTheDocument();
+  });
+
+  it('undoes a same-column reorder as one action', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await addTask(user, 'Task one');
+    await addTask(user, 'Task two');
+    await addTask(user, 'Task three');
+
+    const source = sortableSource('task-3', 'todo', 2);
+    const target = sortableTarget('task-1', 'todo', 0);
+    startDrag({ operation: { source, target } });
+    overDrag({ operation: { source, target } });
+    endDrag({ operation: { source, target } });
+
+    expect(columnItems('To Do')).toEqual([
+      'Task three',
+      'Task one',
+      'Task two',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(columnItems('To Do')).toEqual([
+      'Task one',
+      'Task two',
+      'Task three',
+    ]);
   });
 
   it('restores the board when a drag is canceled', async () => {

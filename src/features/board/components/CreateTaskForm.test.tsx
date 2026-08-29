@@ -22,6 +22,8 @@ describe('CreateTaskForm', () => {
         characterError={null}
         onRetryCharacters={vi.fn()}
         onCreate={vi.fn()}
+        canUndo={false}
+        onUndo={vi.fn()}
         canReset={false}
         onReset={vi.fn()}
       />,
@@ -51,6 +53,8 @@ describe('CreateTaskForm', () => {
         characterError={null}
         onRetryCharacters={vi.fn()}
         onCreate={onCreate}
+        canUndo={false}
+        onUndo={vi.fn()}
         canReset={false}
         onReset={vi.fn()}
       />,
@@ -80,6 +84,8 @@ describe('CreateTaskForm', () => {
         characterError={null}
         onRetryCharacters={vi.fn()}
         onCreate={vi.fn()}
+        canUndo={false}
+        onUndo={vi.fn()}
         canReset={false}
         onReset={vi.fn()}
       />,
@@ -102,6 +108,8 @@ describe('CreateTaskForm', () => {
         characterError="Network unavailable"
         onRetryCharacters={onRetryCharacters}
         onCreate={vi.fn()}
+        canUndo={false}
+        onUndo={vi.fn()}
         canReset={false}
         onReset={vi.fn()}
       />,
@@ -110,5 +118,42 @@ describe('CreateTaskForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Network unavailable');
     await user.click(screen.getByRole('button', { name: 'Retry characters' }));
     expect(onRetryCharacters).toHaveBeenCalledOnce();
+  });
+
+  it('disables undo without history and invokes it when available', async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn();
+    const { rerender } = render(
+      <CreateTaskForm
+        characters={characters}
+        characterStatus="success"
+        characterError={null}
+        onRetryCharacters={vi.fn()}
+        onCreate={vi.fn()}
+        canUndo={false}
+        onUndo={onUndo}
+        canReset={false}
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+
+    rerender(
+      <CreateTaskForm
+        characters={characters}
+        characterStatus="success"
+        characterError={null}
+        onRetryCharacters={vi.fn()}
+        onCreate={vi.fn()}
+        canUndo
+        onUndo={onUndo}
+        canReset={false}
+        onReset={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(onUndo).toHaveBeenCalledOnce();
   });
 });
